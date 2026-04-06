@@ -1,0 +1,75 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: users
+    // Document ID: userId (UID)
+    // Fields:
+    //   - uid: string (required)
+    //   - email: string (required, email format)
+    //   - displayName: string (optional)
+    //   - createdAt: timestamp (required)
+    //
+    // Collection: stories
+    // Document ID: storyId (auto-generated)
+    // Fields:
+    //   - userId: string (required)
+    //   - title: string (required)
+    //   - viralHook: string (required)
+    //   - fullStory: string (required)
+    //   - metaTitle: string (required)
+    //   - metaDescription: string (required)
+    //   - hashtags: list (required)
+    //   - scenes: list (required)
+    //   - createdAt: timestamp (required)
+    //   - videoReferences: list (optional)
+    //
+    // ===============================================================
+
+    // Helper Functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isDocOwner() {
+      return isAuthenticated() && request.auth.uid == resource.data.userId;
+    }
+
+    function isValidEmail(email) {
+      return email is string && email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$");
+    }
+
+    function isValidUser(data) {
+      return data.keys().hasAll(['uid', 'email', 'createdAt']) &&
+             data.uid == request.auth.uid &&
+             isValidEmail(data.email);
+    }
+
+    function isValidStory(data) {
+      return data.keys().hasAll(['userId', 'title', 'fullStory', 'createdAt']) &&
+             data.userId == request.auth.uid &&
+             data.title is string && data.title.size() < 200 &&
+             data.fullStory is string && data.fullStory.size() < 10000;
+    }
+
+    match /users/{userId} {
+      allow read: if isOwner(userId);
+      allow create: if isOwner(userId) && isValidUser(request.resource.data);
+      allow update: if isOwner(userId) && isValidUser(request.resource.data);
+    }
+
+    match /stories/{storyId} {
+      allow read: if isDocOwner();
+      allow create: if isAuthenticated() && isValidStory(request.resource.data);
+      allow update: if isDocOwner() && isValidStory(request.resource.data);
+      allow delete: if isDocOwner();
+    }
+  }
+}
